@@ -30,7 +30,8 @@ double get_density(double altitude_m, double temp_celsius) {
 // Used for error handling of invalid inputs
 int getSafeChoice(int min, int max) {
     int choice;
-    while (!(cin>> choice) || choice < min || choice > max) {
+    while (!(cin >> choice) || choice < min || choice > max) {
+        if(cin.eof()) return min;  // stdin closed — return safe default
         cout << "Invalid! Enter " << min << " - " << max << " only: ";
         cin.clear();
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
@@ -41,6 +42,7 @@ int getSafeChoice(int min, int max) {
 double getSafeNumeric(){
     double numeric;
     while (!(cin>> numeric)) {
+        if(cin.eof()) return 0.0;  // stdin closed — return safe default
         cout << "Invalid! Enter Valid numeric value!";
         cin.clear();
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
@@ -107,9 +109,131 @@ struct Airport{
 vector<Aircraft> fleet;
 vector<Airport> airports;
 
-// Functions to save aircrafts and airports to database
-void save_aircraft(Aircraft airplane){}
-void save_airport(Airport runway){}
+// Database file paths
+const string AIRCRAFT_DB = "aircraft_db.txt";
+const string AIRPORT_DB  = "airport_db.txt";
+
+// Save a single aircraft to the database file (appends one line)
+// Format: name|empty_weight|thrust|wing_area|cd0|K|cl_max|type|thrust_lapse_a|thrust_model
+void save_aircraft(Aircraft airplane){
+    ofstream file(AIRCRAFT_DB, ios::app);  // append mode
+    if(!file){
+        cout<<"Warning: Could not open aircraft database for writing."<<endl;
+        return;
+    }
+    file << airplane.name        << "|"
+         << airplane.empty_weight << "|"
+         << airplane.thrust       << "|"
+         << airplane.wing_area    << "|"
+         << airplane.cd0          << "|"
+         << airplane.K            << "|"
+         << airplane.cl_max       << "|"
+         << airplane.type         << "|"
+         << airplane.thrust_lapse_a << "|"
+         << airplane.thrust_model << "\n";
+    file.close();
+    cout<<"Aircraft saved to database."<<endl;
+}
+
+// Save a single airport to the database file (appends one line)
+// Format: code|runway_length|altitude|material|friction_mu
+void save_airport(Airport runway){
+    ofstream file(AIRPORT_DB, ios::app);  // append mode
+    if(!file){
+        cout<<"Warning: Could not open airport database for writing."<<endl;
+        return;
+    }
+    file << runway.code          << "|"
+         << runway.runway_length << "|"
+         << runway.altitude      << "|"
+         << runway.material      << "|"
+         << runway.friction_mu   << "\n";
+    file.close();
+    cout<<"Airport saved to database."<<endl;
+}
+
+// Load all aircraft from the database file into the fleet vector
+void load_aircraft(){
+    ifstream file(AIRCRAFT_DB);
+    if(!file) return;  // file doesn't exist yet, no problem
+
+    string line;
+    int count = 0;
+    while(getline(file, line)){
+        if(line.empty()) continue;
+
+        // Parse the pipe-delimited line into fields
+        string fields[10];
+        int f = 0;
+        string token;
+        for(int i = 0; i <= (int)line.size() && f < 10; i++){
+            if(i == (int)line.size() || line[i] == '|'){
+                fields[f++] = token;
+                token = "";
+            } else {
+                token += line[i];
+            }
+        }
+        if(f < 10) continue;  // skip malformed lines
+
+        Aircraft ac(
+            fields[0],              // name
+            stod(fields[1]),        // empty_weight
+            stod(fields[2]),        // thrust
+            stod(fields[3]),        // wing_area
+            stod(fields[4]),        // cd0
+            stod(fields[5]),        // K
+            stod(fields[6]),        // cl_max
+            fields[7],              // type
+            stod(fields[8]),        // thrust_lapse_a
+            fields[9]               // thrust_model
+        );
+        fleet.push_back(ac);
+        count++;
+    }
+    file.close();
+    if(count > 0)
+        cout<<"Loaded "<<count<<" aircraft from database."<<endl;
+}
+
+// Load all airports from the database file into the airports vector
+void load_airport(){
+    ifstream file(AIRPORT_DB);
+    if(!file) return;  // file doesn't exist yet, no problem
+
+    string line;
+    int count = 0;
+    while(getline(file, line)){
+        if(line.empty()) continue;
+
+        // Parse the pipe-delimited line into fields
+        string fields[5];
+        int f = 0;
+        string token;
+        for(int i = 0; i <= (int)line.size() && f < 5; i++){
+            if(i == (int)line.size() || line[i] == '|'){
+                fields[f++] = token;
+                token = "";
+            } else {
+                token += line[i];
+            }
+        }
+        if(f < 5) continue;  // skip malformed lines
+
+        Airport rwy(
+            fields[0],          // code
+            stod(fields[1]),    // runway_length
+            stod(fields[2]),    // altitude
+            fields[3],          // material
+            stod(fields[4])     // friction_mu
+        );
+        airports.push_back(rwy);
+        count++;
+    }
+    file.close();
+    if(count > 0)
+        cout<<"Loaded "<<count<<" airport(s) from database."<<endl;
+}
 
 // Adding aircraft object to vector database and global database
 void add_aircraft(){
@@ -241,18 +365,19 @@ void add_airport(){
     cout<<"4. Normal Turf, Long Grass  (mu = 0.07)"<<endl;
     cout<<"5. Soft Ground              (mu = 0.10)"<<endl;
     cout<<"6. Custom"<<endl;
-
     cout<<"Your choice (1-6): "; int mat_choice = getSafeChoice(1,6);
     
     switch (mat_choice){
         case 1:{runway_surface = "Concrete/Asphalt_Dry"; runway_friction_coeffecient = 0.02; break;}
         case 2:{runway_surface = "Hard_Turf"; runway_friction_coeffecient = 0.04; break;}
-        case 3:{runway_surface = "Short_Grass"; runway_friction_coeffecient = 0.05; break;}
-        case 4:{runway_surface = "Long_Grass"; runway_friction_coeffecient = 0.07; break;}
+        case 3:{runway_surface = "Normal_Turf_Short_Grass"; runway_friction_coeffecient = 0.05; break;}
+        case 4:{runway_surface = "Normal_Turf_Long_Grass"; runway_friction_coeffecient = 0.07; break;}
         case 5:{runway_surface = "Soft_Ground"; runway_friction_coeffecient = 0.10; break;}
         case 6:{
-            cout<<"Enter custom surface name: "; cin>>runway_surface;
-            cout<<"Enter custom friction coefficient: "; runway_friction_coeffecient = getSafeNumeric();
+            cout<<"Enter custom surface name: ";
+            cin>>runway_surface;
+            cout<<"Enter friction coefficient (mu): ";
+            runway_friction_coeffecient = getSafeNumeric();
             break;}
         default:{cout<<"Invalid Choice!"<<endl;}
     }
@@ -541,6 +666,10 @@ void simulation(){
 int main(){
     cout<<"---------------------- Welcome to AeroCalc , Your Takeoff Clearance Assistant ----------------------"<<endl;
     cout<<"===================================================================================================="<<endl;
+
+    // Load any previously saved aircraft and airports from the database files
+    load_aircraft();
+    load_airport();
 
     bool main_menu = true;
 
