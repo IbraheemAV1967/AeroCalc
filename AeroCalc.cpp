@@ -574,18 +574,22 @@ void simulation(){
         }
     }
 
-    // Get wind speed with validation loop
-    // atanh(x) requires |x| < 1, so |Vw| must be less than sqrt(A/B)
-    // sqrt(A/B) is the aircraft's maximum achievable airspeed on the ground
-    double sqrtAB = sqrt(A * B);
-    double sqrtBA = sqrt(B / A);
-    double max_wind = 1.0 / sqrtBA;  // = sqrt(A/B)
+    /* Get wind speed with validation loop
+    atanh(x) requires |x| < 1, so |Vw| must satisfy |Vw| < sqrt(A/B)
+    sqrt(A/B) is the theoretical max ground-run airspeed (net accel = 0)
+    IMPORTANT: We compute max_wind = sqrt(A/B) directly.
+    The old code used sqrtBA = sqrt(B/A) and checked fabs(Vw)*sqrtBA < 1.0,
+    which is mathematically equivalent BUT if B is near-zero or produces NaN
+    via sqrt, the comparison NaN < 1.0 is always FALSE (IEEE 754), causing
+    even Vw=0 to trigger the "extreme windspeed" error every time.*/
+    double max_wind = (B > 0.0) ? sqrt(A / B) : 1e9;  // fallback: no practical limit if B~0
+    double sqrtAB   = (B > 0.0) ? sqrt(A * B) : sqrt(A); // used in atanh formula below
 
     double Vw;
     while(true){
         cout<<"Enter wind speed (m/s) [positive = headwind, negative = tailwind, 0 = no wind]: ";
         Vw = getSafeNumeric();
-        if(fabs(Vw) * sqrtBA < 1.0){
+        if(fabs(Vw) < max_wind){
             break;  // valid wind speed
         }
         cout<<"\n*** Wind speed too extreme for valid calculation! ***"<<endl;
@@ -601,6 +605,8 @@ void simulation(){
     // When Vw = 0, this reduces to the standard no-wind formulas automatically
 
     // Time: t = (1/sqrt(AB)) * [atanh(VTO*sqrt(B/A)) - atanh(Vw*sqrt(B/A))]
+    // Note: sqrt(B/A) = 1/max_wind  (since max_wind = sqrt(A/B))
+    double sqrtBA = (B > 0.0) ? (1.0 / max_wind) : 0.0;
     t_to = (1.0 / sqrtAB) * (atanh(VTO * sqrtBA) - atanh(Vw * sqrtBA));
     // Distance: S = (1/2B) * ln((A - B*Vw^2) / (A - B*VTO^2)) - Vw*t
     STO = (1.0 / (2.0 * B)) * log((A - B * Vw * Vw) / (A - B * VTO * VTO)) - Vw * t_to;
